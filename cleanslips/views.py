@@ -150,7 +150,7 @@ def upload(request, campus):
                 call_number = matches[2]
                 holdings = matches[3]
                 
-                full_availability = "[{location} - "+{call_number[:-1]+"]" # negative index to remove extra space
+                full_availability = "[" + location + "[" + call_number[:-1] + "]" # negative index to remove extra space
                 
                 # normalize call number for sorting
                 lccn = callnumber.LC(call_number)
