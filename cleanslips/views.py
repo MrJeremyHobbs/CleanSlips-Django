@@ -159,7 +159,7 @@ def upload(request, campus):
                 if normalized_call_number == None:
                     normalized_call_number = call_number
                      
-                sort_string = f"{normalized_call_number}|{location}"
+                sort_string = normalized_call_number + "|" + location
 
                 # add to requests dictionary
                 ill_request = {
