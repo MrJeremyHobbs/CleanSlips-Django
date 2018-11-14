@@ -1,8 +1,4 @@
-certifi==2018.10.15
-chardet==3.0.4
-codecov==2.0.15
-coverage==4.5.1
-Django==2.0.6
+Django==2.1
 django-excel==0.0.10
 et-xmlfile==1.0.1
 flake8==3.5.0

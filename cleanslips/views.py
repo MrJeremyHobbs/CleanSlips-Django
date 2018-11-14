@@ -1,128 +1,83 @@
+# django imports
 from django.shortcuts import render, redirect
 from django.http import HttpResponseBadRequest, HttpResponse
 from django import forms
-#import django_excel as excel
-
-# modules
+from operator import itemgetter
+from io import StringIO, BytesIO
 import os
 import re
-from operator import itemgetter
-from io import StringIO
-from io import BytesIO
-
-# local modules
+from . import helpers
 from . modules import callnumber
 from . modules.docx_mailmerge_local.mailmerge import MailMerge
 
 # Form class
 class UploadFileForm(forms.Form):
     file = forms.FileField()
-
-
-# Create your views here.
-def upload(request, campus):     
     
-    # check campus code
-    campuses = []
+
+# Main upload and processing form #############################################
+def upload(request, campus, template):
     
-    campus = campus.upper()
+    # Get full length campus name
+    campus_name = helpers.get_campus_name(campus)
+    if campus_name == None:
+        return render(request, 'errors.html', {'title' : 'CleanSlips | Ooops',
+                                               'campus': campus.upper(),
+                                               'template': template,
+                                               'errors' : f"Campus code '{campus.upper()}' was not found. Are you sure you have your correct 3 character campus code?"},
+                                               )
+
+    # Serve up upload form
+    if request.method == 'GET':
+        file = forms.FileField()
+        form = UploadFileForm()
+        return render(request, 'upload.html', {'form': form,
+                                               'title': 'CleanSlips | '+campus_name,
+                                               'header': ('CleanSlips'),
+                                               'campus': campus.upper(),
+                                               'campus_name': campus_name})
     
-    campus_name = ""
-    if campus == "CBA":
-        campus_name = "Bakersfield"
-
-    if campus == "U$C":
-        campus_name = "Channel Islands"
-
-    if campus == "CCH":
-        campus_name = "Bakersfield"
-
-    if campus == "CDH":
-        campus_name = "Bakersfield"
-
-    if campus == "CSH":
-        campus_name = "Bakersfield"
-
-    if campus == "CFS":
-        campus_name = "Bakersfield"
-
-    if campus == "CFI":
-        campus_name = "Bakersfield"
-
-    if campus == "CHU":
-        campus_name = "Bakersfield"
-
-    if campus == "CLO":
-        campus_name = "Bakersfield"
-
-    if campus == "CLA":
-        campus_name = "Bakersfield"
-
-    if campus == "CVM":
-        campus_name = "Bakersfield"
-
-    if campus == "MB@":
-        campus_name = "Bakersfield"
-
-    if campus == "MFL":
-        campus_name = "Bakersfield"
-
-    if campus == "CNO":
-        campus_name = "Bakersfield"
-
-    if campus == "CPO":
-        campus_name = "Bakersfield"
-
-    if campus == "CSA":
-        campus_name = "Bakersfield"
-
-    if campus == "CSB":
-        campus_name = "Bakersfield"
-    
-    if campus == "CDS":
-        campus_name = "Bakersfield"
-
-    if campus == "CSF":
-        campus_name = "Bakersfield"
-
-    if campus == "CSJ":
-        campus_name = "Bakersfield"
-
-    if campus == "CPS":
-        campus_name = "Bakersfield"
-
-    if campus == "CS1":
-        campus_name = "Bakersfield"
-
-    if campus == "CSO":
-        campus_name = "Bakersfield"
-
-    if campus == "CTU":
-        campus_name = "Bakersfield"
-
-    if request.method == "POST":
+    # Process spreadsheet
+    if request.method == "POST":                                      
         form = UploadFileForm(request.POST, request.FILES)
         
         if form.is_valid():
             filehandle = request.FILES['file']
             
-            # read Alma spreadsheet
+            # Check file type
+            if ".xls" not in str(filehandle):
+                return render(request, 'errors.html', {'title' : 'CleanSlips | Ooops',
+                                                       'campus': campus.upper(),
+                                                       'template': template,
+                                                       'errors' : "Chosen file is not an .xls file. Are you sure that you chose LendingRequestReport.xls?"},
+                                                       )
+            
+            # read spreadsheet
             ill_requests = []
             
+            # check header
             rows = filehandle.get_array()
+            if rows[0] != ['Title', 'Author', 'Publisher', 'Publication date', 'Barcode', 'ISBN/ISSN', 'Availability', 'Volume/Issue', 'Shipping note', 'Requester email', 'Pickup at', 'Electronic available', 'Digital available', 'External request ID', 'Partner name', 'Partner code', 'Copyright Status', 'Level of Service']:
+                return render(request, 'errors.html', {'title' : 'CleanSlips | Ooops',
+                                                       'campus': campus.upper(),
+                                                       'template': template,
+                                                       'errors' : "The headers on this spreadsheet don't match what CleanSlips is expecting. Are you sure that you chose LendingRequestReport.xls?"},
+                                                       )
+            
+            # parse spreadsheet
             for row in rows:
-                title = row[0]
                 
                 # skip header
-                if title == "Title":
+                if row[0] == "Title":
                     continue
-                
+            
+                title = row[0]
                 author = row[1]
                 publisher = row[2]
                 publication_date = row[3]
                 barcode = row[4]
                 isbn_issn = row[5]
-                availability = row[6]
+                availability_string = row[6]
                 volume_issue = row[7]
                 requestor_email = row[9]
                 pickup_at = row[10]
@@ -141,25 +96,48 @@ def upload(request, campus):
                 requestor_name = shipping_notes[1]
                 
                 # parse availability
-                regex = r'(.*?),(.*?)\.(.*).*(\(\d{1,3} copy,\d{1,3} available\))'
-                q = re.findall(regex, availability)
-                matches = list(q[0])
+                availability_array = availability_string.split('||')
                 
-                library = matches[0]
-                location = matches[1]
-                call_number = matches[2]
-                holdings = matches[3]
+                full_availability_array = []
+                full_sort_string_array = []
                 
-                full_availability = "[" + location + "[" + call_number[:-1] + "]" # negative index to remove extra space
+                for availability in availability_array:
+                    
+                    # skip if on loan
+                    if "Resource Sharing Long Loan" in availability:
+                        continue
+                    if "Resource Sharing Short Loan" in availability:
+                        continue
+                    
+                    # split availability string into parts
+                    regex = r'(.*?),(.*?)\.(.*).*(\(\d{1,3} copy,\d{1,3} available\))'
+                    q = re.findall(regex, availability)
+                    try:
+                        matches = list(q[0])
+
+                        library = matches[0]
+                        location = matches[1]
+                        call_number = matches[2]
+                        holdings = matches[3]
+                       
+                        full_availability_array.append(f"[{location} - {call_number[:-1]}]") # negative index to remove extra space
+                        
+                    except IndexError:
+                        full_availability_array.append(f"[{availability}]")
+     
+                    # normalize call number for sorting
+                    lccn = callnumber.LC(call_number)
+                    lccn_components = lccn.components(include_blanks=True)
+                    normalized_call_number = lccn.normalized
+                    if normalized_call_number == None:
+                        normalized_call_number = call_number
+                         
+                    sort_string = f"{location}|{normalized_call_number}"
+                    full_sort_string_array.append(sort_string)
                 
-                # normalize call number for sorting
-                lccn = callnumber.LC(call_number)
-                lccn_components = lccn.components(include_blanks=True)
-                normalized_call_number = lccn.normalized
-                if normalized_call_number == None:
-                    normalized_call_number = call_number
-                     
-                sort_string = normalized_call_number + "|" + location
+                # combine availability and sort fields
+                full_availability = "; ".join(full_availability_array)
+                full_sort_string = "; ".join(full_sort_string_array)
 
                 # add to requests dictionary
                 ill_request = {
@@ -170,26 +148,35 @@ def upload(request, campus):
                     'Comments' : comments,
                     'RequestorName' : requestor_name,
                     'VolumeIssue' : volume_issue,
-                    'Title' : title,
+                    'Title' : title[:40],
                     'Shipping_note' : requestor_name,
                     'Sort' : sort_string,
+                    'Campus_Code': campus,
+                    'Campus_Name': campus_name,
                 }
                 
                 # add to ongoing list
                 ill_requests.append(ill_request)   
-                
+                    
             # sort requests by location and normalized call number
-            requests_sorted = sorted(ill_requests, key=itemgetter('Sort'))
+            requests_sorted = sorted(ill_requests, key=itemgetter('Sort'))     
                 
-            # mail merge
-            template = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'templates/labels/TEMPLATE_stickers.docx')
-
-            document = MailMerge(template)
-            if "_slips" in template:
-                document.merge_templates(requests_sorted, separator='nextColumn_section')
-            if "_stickers" in template:
+            # stickers
+            if template == "stickers":
+                template = os.path.join(os.path.dirname(os.path.realpath(__file__)), f'static\\slip_templates\\campus\\{campus.upper()}\\TEMPLATE_stickers.docx')
+                document = MailMerge(template)
                 document.merge_rows('Shipping_note', requests_sorted)
             
+            # flags
+            if template == "flags":
+                template = os.path.join(os.path.dirname(os.path.realpath(__file__)), f'static\\slip_templates\\campus\\{campus.upper()}\\TEMPLATE_flags.docx')
+                document = MailMerge(template)
+                document.merge_templates(requests_sorted, separator='column_break')
+                
+            if template == "both":
+                pass
+            
+            # generate slips
             f = BytesIO()
             document.write(f)
             length = f.tell()
@@ -201,18 +188,25 @@ def upload(request, campus):
             response['Content-Disposition'] = 'attachment; filename=SLIPS.docx'
             response['Content-Length'] = length
             return response
-    
+
+                                                  
+                                                  
+# Other pages ################################################################# 
+def home(request):
+    return render(request, 'home.html', {f'title': 'CleanSlips | Home',
+                                         'header': 'CleanSlips'})
+
+def find(request):
+    if request.POST:
+        return redirect(f"/campus={request.POST['campus']}&template={request.POST['template']}")
     else:
-        form = UploadFileForm()
-    return render(
-        request,
-        'upload_form.html',
-        {
-            'form': form,
-            'title': 'CleanSlips',
-            'header': ('CleanSlips')
-        })
+        return render(request, 'errors.html', {'title': 'CleanSlips | Ooops!',
+                                                 'header': 'CleanSlips'})
         
-        
-def get_campus_name ():
-    pass
+def docs(request):
+    return render(request, 'docs.html', {'title': 'CleanSlips | Documentation',
+                                         'header': 'CleanSlips'})
+                                         
+def contact(request):
+    return render(request, 'contact.html', {'title': 'CleanSlips | Contact',
+                                         'header': 'CleanSlips'})
