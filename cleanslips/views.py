@@ -13,11 +13,11 @@ from . modules.docx_mailmerge_local.mailmerge import MailMerge
 # Form class
 class UploadFileForm(forms.Form):
     file = forms.FileField()
-    
+
 
 # Main upload and processing form #############################################
 def upload(request, campus, template):
-    
+
     # Get full length campus name
     campus_name = helpers.get_campus_name(campus)
     if campus_name == None:
@@ -36,14 +36,14 @@ def upload(request, campus, template):
                                                'header': ('CleanSlips'),
                                                'campus': campus.upper(),
                                                'campus_name': campus_name})
-    
+
     # Process spreadsheet
-    if request.method == "POST":                                      
+    if request.method == "POST":
         form = UploadFileForm(request.POST, request.FILES)
-        
+
         if form.is_valid():
             filehandle = request.FILES['file']
-            
+
             # Check file type
             if ".xls" not in str(filehandle):
                 return render(request, 'errors.html', {'title' : 'CleanSlips | Ooops',
@@ -51,10 +51,10 @@ def upload(request, campus, template):
                                                        'template': template,
                                                        'errors' : "Chosen file is not an .xls file. Are you sure that you chose LendingRequestReport.xls?"},
                                                        )
-            
+
             # read spreadsheet
             ill_requests = []
-            
+
             # check header
             rows = filehandle.get_array()
             if rows[0] != ['Title', 'Author', 'Publisher', 'Publication date', 'Barcode', 'ISBN/ISSN', 'Availability', 'Volume/Issue', 'Shipping note', 'Requester email', 'Pickup at', 'Electronic available', 'Digital available', 'External request ID', 'Partner name', 'Partner code', 'Copyright Status', 'Level of Service']:
@@ -63,14 +63,14 @@ def upload(request, campus, template):
                                                        'template': template,
                                                        'errors' : "The headers on this spreadsheet don't match what CleanSlips is expecting. Are you sure that you chose LendingRequestReport.xls?"},
                                                        )
-            
+
             # parse spreadsheet
             for row in rows:
-                
+
                 # skip header
                 if row[0] == "Title":
                     continue
-            
+
                 title = row[0]
                 author = row[1]
                 publisher = row[2]
@@ -88,27 +88,27 @@ def upload(request, campus, template):
                 partner_code = row[15]
                 copyright_status = row[16]
                 level_of_service = row[17]
-                
+
                 # parse shipping note
                 shipping_note = row[8]
                 shipping_notes = shipping_note.split('||')
                 comments = shipping_notes[0]
                 requestor_name = shipping_notes[1]
-                
+
                 # parse availability
                 availability_array = availability_string.split('||')
-                
+
                 full_availability_array = []
                 full_sort_string_array = []
-                
+
                 for availability in availability_array:
-                    
+
                     # skip if on loan
                     if "Resource Sharing Long Loan" in availability:
                         continue
                     if "Resource Sharing Short Loan" in availability:
                         continue
-                    
+
                     # split availability string into parts
                     regex = r'(.*?),(.*?)\.(.*).*(\(\d{1,3} copy,\d{1,3} available\))'
                     q = re.findall(regex, availability)
@@ -119,22 +119,22 @@ def upload(request, campus, template):
                         location = matches[1]
                         call_number = matches[2]
                         holdings = matches[3]
-                       
+
                         full_availability_array.append(f"[{location} - {call_number[:-1]}]") # negative index to remove extra space
-                        
+
                     except IndexError:
                         full_availability_array.append(f"[{availability}]")
-     
+
                     # normalize call number for sorting
                     lccn = callnumber.LC(call_number)
                     lccn_components = lccn.components(include_blanks=True)
                     normalized_call_number = lccn.normalized
                     if normalized_call_number == None:
                         normalized_call_number = call_number
-                         
+
                     sort_string = f"{location}|{normalized_call_number}"
                     full_sort_string_array.append(sort_string)
-                
+
                 # combine availability and sort fields
                 full_availability = "; ".join(full_availability_array)
                 full_sort_string = "; ".join(full_sort_string_array)
@@ -154,28 +154,28 @@ def upload(request, campus, template):
                     'Campus_Code': campus,
                     'Campus_Name': campus_name,
                 }
-                
+
                 # add to ongoing list
-                ill_requests.append(ill_request)   
-                    
+                ill_requests.append(ill_request)
+
             # sort requests by location and normalized call number
-            requests_sorted = sorted(ill_requests, key=itemgetter('Sort'))     
-                
+            requests_sorted = sorted(ill_requests, key=itemgetter('Sort'))
+
             # stickers
             if template == "stickers":
-                template = os.path.join(os.path.dirname(os.path.realpath(__file__)), f'static\\slip_templates\\campus\\{campus.upper()}\\TEMPLATE_stickers.docx')
+                template = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.join('static','slip_templates','campus',campus.upper(),'TEMPLATE_stickers.docx'))
                 document = MailMerge(template)
                 document.merge_rows('Shipping_note', requests_sorted)
-            
+
             # flags
             if template == "flags":
-                template = os.path.join(os.path.dirname(os.path.realpath(__file__)), f'static\\slip_templates\\campus\\{campus.upper()}\\TEMPLATE_flags.docx')
+                template = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.join('static','slip_templates','campus', campus.upper(), 'TEMPLATE_flags.docx'))
                 document = MailMerge(template)
                 document.merge_templates(requests_sorted, separator='column_break')
-                
+
             if template == "both":
                 pass
-            
+
             # generate slips
             f = BytesIO()
             document.write(f)
@@ -189,9 +189,9 @@ def upload(request, campus, template):
             response['Content-Length'] = length
             return response
 
-                                                  
-                                                  
-# Other pages ################################################################# 
+
+
+# Other pages #################################################################
 def home(request):
     return render(request, 'home.html', {f'title': 'CleanSlips | Home',
                                          'header': 'CleanSlips'})
@@ -202,11 +202,11 @@ def find(request):
     else:
         return render(request, 'errors.html', {'title': 'CleanSlips | Ooops!',
                                                  'header': 'CleanSlips'})
-        
+
 def docs(request):
     return render(request, 'docs.html', {'title': 'CleanSlips | Documentation',
                                          'header': 'CleanSlips'})
-                                         
+
 def contact(request):
     return render(request, 'contact.html', {'title': 'CleanSlips | Contact',
                                          'header': 'CleanSlips'})
