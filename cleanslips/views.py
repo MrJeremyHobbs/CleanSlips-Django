@@ -6,19 +6,21 @@ from operator import itemgetter
 from io import StringIO, BytesIO
 import os
 import re
+
+# local imports
 from . import helpers
 from . modules import callnumber
 from . modules.docx_mailmerge_local.mailmerge import MailMerge
 
-# Form class
+# form class
 class UploadFileForm(forms.Form):
     file = forms.FileField()
 
 
-# Main upload and processing form #############################################
+# main upload and processing form #############################################
 def upload(request, campus, template):
 
-    # Get full length campus name
+    # get campus name
     campus_name = helpers.get_campus_name(campus)
     if campus_name == None:
         return render(request, 'errors.html', {'title' : 'CleanSlips | Ooops',
@@ -27,7 +29,7 @@ def upload(request, campus, template):
                                                'errors' : f"Campus code '{campus.upper()}' was not found. Are you sure you have your correct 3 character campus code?"},
                                                )
 
-    # Serve up upload form
+    # serve up upload form
     if request.method == 'GET':
         file = forms.FileField()
         form = UploadFileForm()
@@ -37,7 +39,7 @@ def upload(request, campus, template):
                                                'campus': campus.upper(),
                                                'campus_name': campus_name})
 
-    # Process spreadsheet
+    # process spreadsheet
     if request.method == "POST":
         form = UploadFileForm(request.POST, request.FILES)
 
@@ -92,9 +94,14 @@ def upload(request, campus, template):
                 # parse shipping note
                 shipping_note = row[8]
                 shipping_notes = shipping_note.split('||')
-                comments = shipping_notes[0]
-                requestor_name = shipping_notes[1]
-
+                try:
+                    comments = shipping_notes[0]
+                    requestor_name = shipping_notes[1]
+                except:
+                    print(f"SHIPPING NOTE FIELD - {shipping_note} - IS NOT AS EXPECTED...ATTEMPTING TO COMPENSATE...")
+                    comments = ""
+                    requestor_name = shipping_note
+                    
                 # parse availability
                 availability_array = availability_string.split('||')
 
@@ -126,12 +133,18 @@ def upload(request, campus, template):
                         full_availability_array.append(f"[{availability}]")
 
                     # normalize call number for sorting
-                    lccn = callnumber.LC(call_number)
-                    lccn_components = lccn.components(include_blanks=True)
-                    normalized_call_number = lccn.normalized
+                    try:
+                        lccn = callnumber.LC(call_number)
+                        lccn_components = lccn.components(include_blanks=True)
+                        normalized_call_number = lccn.normalized
+                    except:
+                        print(f"CALL NUMBER - {call_number} - IS NOT VALID LC. ATTEMPTING TO COMPENSATE...")
+                        normalized_call_number = None
+                    
                     if normalized_call_number == None:
                         normalized_call_number = call_number
-
+                    
+                    # generate sort string
                     sort_string = f"{location}|{normalized_call_number}"
                     full_sort_string_array.append(sort_string)
 
@@ -172,9 +185,6 @@ def upload(request, campus, template):
                 template = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.join('static','slip_templates','campus', campus.upper(), 'TEMPLATE_flags.docx'))
                 document = MailMerge(template)
                 document.merge_templates(requests_sorted, separator='column_break')
-
-            if template == "both":
-                pass
 
             # generate slips
             f = BytesIO()
