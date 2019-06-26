@@ -2,11 +2,6 @@
 # CleanSlips-Django 
 A web app for generating interlibrary loan slips in Alma for the CSU system.
 
-Currently live at https://slips.calstate.edu/
-
-# How to Use
-Documentation can be found [here](https://slips.calstate.edu/docs).
-
 # Background
 Each campus has individual templates, found in the cleanslips/static/slip_templates folder.
 
