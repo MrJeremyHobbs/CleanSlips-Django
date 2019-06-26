@@ -23,5 +23,5 @@ CleanSlips uses the [MailMerge](https://pypi.org/project/docx-mailmerge/) python
 
 A good tutorial on this module can be found [here](https://pbpython.com/python-word-template.html).
 
-## Other Versions
+# Other Versions
 A legacy desktop app is available [here](https://github.com/MrJeremyHobbs/CleanSlips).
