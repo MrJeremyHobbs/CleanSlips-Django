@@ -1,6 +1,7 @@
 *.pyc
 *~
 __pycache__
+__dump__
 env
 django-excel
 db.sqlite3

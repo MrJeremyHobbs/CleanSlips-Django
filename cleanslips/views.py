@@ -39,7 +39,7 @@ def upload(request, campus, template):
                                                'campus': campus.upper(),
                                                'campus_name': campus_name})
 
-    # process spreadsheet
+    # get spreadsheet
     if request.method == "POST":
         form = UploadFileForm(request.POST, request.FILES)
 
@@ -66,7 +66,7 @@ def upload(request, campus, template):
                                                        'errors' : "The headers on this spreadsheet don't match what CleanSlips is expecting. Are you sure that you chose LendingRequestReport.xls?"},
                                                        )
 
-            # parse spreadsheet
+            # __________ PARSE SPREADSHEET ____________________________________
             for row in rows:
 
                 # skip header
@@ -91,7 +91,7 @@ def upload(request, campus, template):
                 copyright_status = row[16]
                 level_of_service = row[17]
 
-                # parse shipping note
+                # ___________ PARSE SHIPPING NOTE _____________________________
                 shipping_note = row[8]
                 shipping_notes = shipping_note.split('||')
                 try:
@@ -102,7 +102,7 @@ def upload(request, campus, template):
                     comments = ""
                     requestor_name = shipping_note
                     
-                # parse availability
+                # __________ PARSE AVAILABILITY _______________________________
                 availability_array = availability_string.split('||')
 
                 full_availability_array = []
@@ -121,7 +121,7 @@ def upload(request, campus, template):
                     q = re.findall(regex, availability)
                     try:
                         matches = list(q[0])
-
+                        
                         library = matches[0]
                         location = matches[1]
                         call_number = matches[2]
@@ -130,6 +130,10 @@ def upload(request, campus, template):
                         full_availability_array.append(f"[{location} - {call_number[:-1]}]") # negative index to remove extra space
 
                     except IndexError:
+                        library = None
+                        location = None
+                        call_number = None
+                        holdings = None
                         full_availability_array.append(f"[{availability}]")
 
                     # normalize call number for sorting
@@ -152,7 +156,7 @@ def upload(request, campus, template):
                 full_availability = "; ".join(full_availability_array)
                 full_sort_string = "; ".join(full_sort_string_array)
 
-                # add to requests dictionary
+                # __________ ADD TO REQUESTS DICTIONARY _______________________
                 ill_request = {
                     'Partner_name' : partner_name,
                     'External_request_ID' : external_request_id,
@@ -174,6 +178,8 @@ def upload(request, campus, template):
             # sort requests by location and normalized call number
             requests_sorted = sorted(ill_requests, key=itemgetter('Sort'))
 
+            # _________ GENERATE LABELS _______________________________________
+            
             # stickers
             if template == "stickers":
                 template = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.join('static','slip_templates','campus',campus.upper(),'TEMPLATE_stickers.docx'))
@@ -186,7 +192,7 @@ def upload(request, campus, template):
                 document = MailMerge(template)
                 document.merge_templates(requests_sorted, separator='column_break')
 
-            # generate slips
+            # generate slips in memory and send as attachment
             f = BytesIO()
             document.write(f)
             length = f.tell()
@@ -197,6 +203,7 @@ def upload(request, campus, template):
             )
             response['Content-Disposition'] = 'attachment; filename=SLIPS.docx'
             response['Content-Length'] = length
+            
             return response
 
 
