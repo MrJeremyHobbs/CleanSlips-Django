@@ -1,4 +1,4 @@
-Django==2.1
+Django==2.2.13
 django-excel==0.0.10
 et-xmlfile==1.0.1
 flake8==3.5.0
