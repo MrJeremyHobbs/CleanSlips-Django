@@ -4,7 +4,7 @@ et-xmlfile==1.0.1
 flake8==3.5.0
 idna==2.7
 jdcal==1.4
-Jinja2==2.10
+Jinja2==2.11.3
 lml==0.0.4
 lxml==4.2.5
 MarkupSafe==1.0
